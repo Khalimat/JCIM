@@ -90,7 +90,7 @@ I trained in parallel  DC and our models, and visualized the results.
 
 [Here](Results/Study_1/Prepape_figures.ipynb) is an example of a notebook I wrote to visualise the results. 
 
-Conceptually, there are tree variant:
+Conceptually, there are three variant:
 - **Violin plot + Scatter plot**
  ![ViolinScatter](Results/Study_2/F1_validation_all.svg)
   
