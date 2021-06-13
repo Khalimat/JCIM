@@ -66,32 +66,55 @@ For example, N_SF_SS stands for run with with no sampling on SCAMS_filtered.csv 
 There are two models presented with SD (**cruzain** and **beta-lactamase**). I made a mistake in the previous email and wrote that there were 4 models, as pbz2-files were not models.
 
 
-### Results
 
-| Model name        | AUC lower estimate | AUC  | AUC upper estimate | Accuracy |  F1 |  MCC
-| ------------- |:-------------:| -----:|-----:| -----:| -----:| -----:| 
-| cruzain |0.754| 0.851|0.948| 0.753| 0.652| 0.573| 
-| beta-lactamase |0.556| 0.687 |0.819 | 0.569| 0.263| 0.165| 
-
-As we can see from the results, the cruzain model performs better. I decided to make sure that the training sets do not contain compounds from the DeepSCAMs validation set (DLS) or very similar molecules. 
-## DeepSCAMs (DC)
-
-### Results
+## Results
 I trained in parallel  DC and our models, and visualized the results.
 
+#### Study 1
 
-##### Radar-chart with mean values
-![AL_non_AL_Deep_SCAMs_performance](Results/DeepSCAMs/AL_non_AL_Deep_SCAMs_performance.svg?raw=true "Title")
+- **Results on the test set**
+ ![Test](Results/Study_1/test.png)
+
+- **Results on the validation set**
+ ![Validation](Results/Study_1/validation.png)
+
+#### Study 2
+- **Results on the test set**
+![Test](Results/Study_2/test.png)
+  
+- **Results on the validation set**
+ ![Validation](Results/Study_2/validation.png)
+
+
+## Visualization
+
+[Here](Results/Study_1/Prepape_figures.ipynb) is an example of a notebook I wrote to visualise the results. 
+
+Conceptually, there are tree variant:
+- **Violin plot + Scatter plot**
+ ![ViolinScatter](Results/Study_2/F1_validation_all.svg)
+  
+- **Violin plot**
+ ![Violin](Results/Study_2/F1_validation_False.svg)
+  
+- **Ridgeline plot** (I assume it is the most informative)
+ ![Ridgeline](Results/Study_2/F1_validation_ridgeline.svg)
 
 
 
 
-# DeepSCAMs validation set ∩ with the training datasets
-- I [checked](/SCAMs/intersection_DeepSCAMs_ds_cruzian.py) the similarity of compounds in the DeepSCAMs validation set (DLS) with the cruzain dataset (used morgan fingerprints). Here is [the table](/Similarity/DLS_cruzian.csv). 17/65 compounds from the DLS dataset have one or more compounds in the cruzain dataset with Tanimoto coefficient (TC) > 0.7.
-- Checked the similarity of compounds in the DLS dataset with the beta-lactamase dataset, found 18/65 highly similar compounds. [The resulting table is here](/Similarity/DLS_beta_lactamase.csv). Albeit, the performance of the model trained on the beta-lactamase dataset was lower.
-- Checked the similarity of compounds in the DLS dataset with the SF dataset, found 2/65 compound with the same TC threshold. [The resulting table is here](/Similarity/DLS_SCAMS_filtered.csv).
-- Checked SCAMS_added_positives_653_1043.csv vs. DLS. Found 4/64 with the same TC threshold.  [The resulting table is here](/Similarity/DLS_added_positives_653_1043.csv)
-- Checked SCAMS_balanced_with_positive.csv vs. DLS. Found 2/64 with the same TC threshold.  [The resulting table is here](/Similarity/DLS_SCAMS_balanced_positive.csv)
 
 
-# SCAMs
+[comment]: <> (# DeepSCAMs validation set ∩ with the training datasets)
+
+[comment]: <> (- I [checked]&#40;/SCAMs/intersection_DeepSCAMs_ds_cruzian.py&#41; the similarity of compounds in the DeepSCAMs validation set &#40;DLS&#41; with the cruzain dataset &#40;used morgan fingerprints&#41;. Here is [the table]&#40;/Similarity/DLS_cruzian.csv&#41;. 17/65 compounds from the DLS dataset have one or more compounds in the cruzain dataset with Tanimoto coefficient &#40;TC&#41; > 0.7.)
+
+[comment]: <> (- Checked the similarity of compounds in the DLS dataset with the beta-lactamase dataset, found 18/65 highly similar compounds. [The resulting table is here]&#40;/Similarity/DLS_beta_lactamase.csv&#41;. Albeit, the performance of the model trained on the beta-lactamase dataset was lower.)
+
+[comment]: <> (- Checked the similarity of compounds in the DLS dataset with the SF dataset, found 2/65 compound with the same TC threshold. [The resulting table is here]&#40;/Similarity/DLS_SCAMS_filtered.csv&#41;.)
+
+[comment]: <> (- Checked SCAMS_added_positives_653_1043.csv vs. DLS. Found 4/64 with the same TC threshold.  [The resulting table is here]&#40;/Similarity/DLS_added_positives_653_1043.csv&#41;)
+
+[comment]: <> (- Checked SCAMS_balanced_with_positive.csv vs. DLS. Found 2/64 with the same TC threshold.  [The resulting table is here]&#40;/Similarity/DLS_SCAMS_balanced_positive.csv&#41;)
+
+
