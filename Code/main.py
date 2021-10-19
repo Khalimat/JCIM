@@ -5,41 +5,28 @@ from __future__ import print_function
 from pathlib import Path
 import pandas as pd
 import numpy as np
-import math
-import random
+
 import argparse
-import tqdm
 import time
 
 #  Importing modules from RDKit
-import rdkit
 from rdkit import Chem
-from rdkit.Chem import Descriptors, AllChem, MACCSkeys, RDKFingerprint
+from rdkit.Chem import Descriptors, AllChem
 from rdkit import DataStructs
 from rdkit.ML.Cluster import Butina
-
+import deepchem as dc
 #  Importing modules from abc package
 from abc import ABC, abstractmethod
 
-#  Importing packages for visualization
-import plotly.graph_objects as go
-import matplotlib.pyplot as plt
-
 #  Importing modules from sklearn
-import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.utils import resample
-
-#  Importing LGBM model
-from lightgbm import LGBMClassifier
 
 #  Importing modules from scipy
 from scipy import stats
-from scipy.stats import ttest_ind
 from scipy.signal import savgol_filter
 from scipy.stats import gmean
 
@@ -49,12 +36,12 @@ from imblearn.under_sampling import CondensedNearestNeighbour, InstanceHardnessT
 
 #  Importing the modules for active learning
 from modAL.models import ActiveLearner
-from modAL.uncertainty import uncertainty_sampling, classifier_entropy
+from modAL.uncertainty import uncertainty_sampling, entropy_sampling
 
 #  Importing modules from TensorFlow and Keras
 import tensorflow as tf
 from tensorflow.python.keras.models import Sequential
-from tensorflow.python.keras.layers import Dense, Dropout, BatchNormalization
+from tensorflow.python.keras.layers import Dense, Dropout
 from keras.wrappers.scikit_learn import KerasClassifier
 
 #  Save model 
@@ -89,7 +76,7 @@ DATASETS = {'SF': 'SCAMS_filtered.csv',
             'SP2': 'SCAMS_added_positives_653_1043.csv'}
 #  AL query mode
 SELECTION_MODE = {'uncertainty_sampling': uncertainty_sampling,
-                  'classifier_entropy': classifier_entropy}
+                  'classifier_entropy': entropy_sampling}
 #  Metrics to calculate
 METRICS = ['AUC_LB_test', 'AUC_test', 'AUC_UB_test', 'Accuracy_test',
            'F1_test', 'MCC_test', 'AUC_LB_validation', 'AUC_validation',
@@ -133,8 +120,8 @@ class KerasClassifier(tf.keras.wrappers.scikit_learn.KerasClassifier):
             with h5py.File(model_hdf5_bio, mode="r") as file:
                 state["model"] = tf.keras.models.load_model(file)
         self.__dict__ = state
-#  Code to compute a variance of  ROC AUC estimate
-#  Adapted from: https://github.com/yandexdataschool/roc_comparison/blob/master/compare_auc_delong_xu.py
+
+
 def compute_midrank(x):
     """Computes midranks.
     Args:
@@ -484,25 +471,12 @@ def describe(mols):
     descrs: list with descriptor
             space for molecules
     """
-    descr = Descriptors._descList[0:2] + Descriptors._descList[3:]
-    calc = [x[1] for x in descr]
-    descrs = []
-    for mol in mols:
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 3, nBits=2048)
-        fp_list = []
-        fp_list.extend(fp.ToBitString())
-        fp_expl = [float(x) for x in fp_list]
-        ds_n = []
-        for d in calc:
-            v = d(mol)
-            if v > np.finfo(np.float32).max:
-                ds_n.append(np.finfo(np.float32).max)
-            else:
-                ds_n.append(np.float32(v))
-
-        descrs += [fp_expl + list(ds_n)]
-
-    return descrs
+    featurizer1 = dc.feat.CircularFingerprint()
+    X1 = featurizer1([m for m in mols])
+    featurizer2 = dc.feat.RDKitDescriptors()
+    X2 = featurizer2([m for m in mols])
+    X = np.hstack((X1, X2))
+    return X
 
 def f_one_mcc_score(model, X_test, Y_test):
     """
@@ -532,7 +506,7 @@ class SCAMsPipeline:
         dataset_name = DATASETS[self.study_name.split('_')[1]]
         self.splitter = SPLIT[self.study_name.split('_')[2]]
 
-        self.results_dir = Path.cwd().parents[1] / 'Results' / self.study_name
+        self.results_dir = Path.cwd().parents[0] / 'Results' / self.study_name
 
         train_test_dataset = pd.read_csv(file_doesnot_exist(datasets_path, dataset_name))
         train_validation_dataset = pd.read_csv(file_doesnot_exist(datasets_path, validation_name))
@@ -663,7 +637,7 @@ class Run:
         TensorFlowAL = ALModel(self.X_train, self.Y_train,
                           self.X_test, self.Y_test,
                           self.X_validation, self.Y_validation,
-                          n_queries, q_strategy=classifier_entropy,
+                          n_queries, q_strategy=entropy_sampling,
                           iteration=self.iteration)
         TensorFlowAL.final_model.model.save(self.results_dir / 'TF_MLP_AL_{}.h5'.format(self.iteration))
         self.perf_stats_tensorflow_AL = pd.DataFrame([[self.iteration] + TensorFlowAL.validation_performance.iloc[0].tolist() +
@@ -893,7 +867,7 @@ class DeepSCAMsModel(Model):
                                              self.Y_validation, 'Validation').results
         self.validation_performance = validation_performance
 
-def create_keras_model(shape=2247,
+def create_keras_model(shape=2256,
                        dropout=0.2):
     model = Sequential()
     model.add(Dense(500, input_dim=shape,
@@ -1036,8 +1010,10 @@ class ALModel(Model):
 
         for i in range(self.n_queries - 1):
             query_idx, query_inst = learner.query(X_pool)
-            learner.teach(X_pool[query_idx], y_pool[query_idx],
-                          epochs=50, batch_size=128, verbose=0)
+            ### Edit ###
+            learner.teach(X_pool[query_idx], y_pool[query_idx])
+            #learner.teach(X_pool[query_idx], y_pool[query_idx],
+            #              epochs=50, batch_size=128, verbose=0)
             X = np.append(X, X_pool[query_idx], axis=0)
             Y = np.append(Y, y_pool[query_idx])
             X_pool, y_pool = np.delete(X_pool, query_idx, axis=0), \
@@ -1052,7 +1028,8 @@ class ALModel(Model):
             performance_v_iter = Validation(learner, self.X_validation,
                                             self.Y_validation, 'Validation').results
             performance_v_iter_l = performance_v_iter.iloc[0].tolist()
-            learner.estimator[1].model.save(Path('/home/khali/scams/Results/N_SP1_TTS') / 'TF_MLP_AL_{}.h5'.format(i+1))
+            ### Edit ##
+            #learner.estimator[1].model.save(Path('/home/khali/scams/Results/N_SP1_TTS') / 'TF_MLP_AL_{}.h5'.format(i+1))
             gmean_validation.append(self.gmen_no_nan(performance_v_iter_l))
             performance_validation_l.append(performance_v_iter_l)
         performance_test_l = np.array(performance_test_l)
@@ -1082,7 +1059,7 @@ class ALModel(Model):
 
 
 if __name__ == "__main__":
-    currnt_path = Path.cwd().parents[1] / 'Datasets'
+    currnt_path = Path.cwd().parents[0] / 'Datasets'
     ap = argparse.ArgumentParser()
     ap.add_argument('-s_n', '--study_name', required=True,
                     help='Study name')
