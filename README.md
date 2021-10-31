@@ -1,4 +1,13 @@
-# [Some name] a class to compare performance of AL and non-AL models
+# [Some name] a pipeline to compare performance of AL and non-AL models
+
+## Docker image
+We created a docker image (modified an image published by deepchem) to ensure reproducibility of calculations. Use the following command to pull the image:
+`$ docker pull khalimat/jcim_f_holly`
+
+The directory with the RP should be mounted to image:
+`$ sudo docker run -it --name jcim -v {directory_w_RP}:/root/mydir khalimat/jcim_f_holly`
+
+## Run
 
 Example of command to run the pipeline:
 

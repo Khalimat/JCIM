@@ -9,12 +9,13 @@ import numpy as np
 import argparse
 import time
 
-#  Importing modules from RDKit
+#  Importing modules from RDKit and DeepChem
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem
 from rdkit import DataStructs
 from rdkit.ML.Cluster import Butina
 import deepchem as dc
+
 #  Importing modules from abc package
 from abc import ABC, abstractmethod
 
@@ -66,6 +67,21 @@ SAMPLING = {'N': False,
             'IHT': InstanceHardnessThreshold()}
 
 def sampl(X_train, Y_train, sampling):
+    """Computes midranks.
+    Args:
+       X_train
+          np.array, training features
+       Y_train
+          np.array, responses
+       sampling
+          trained sampling approach
+
+    Returns:
+       X_train
+          transformed np.array with training features
+       Y_train
+          transformed np.array with responses
+    """
     sl = sampling
     X_train, Y_train = sl.fit_resample(X_train, Y_train)
     return X_train, Y_train
@@ -83,6 +99,7 @@ METRICS = ['AUC_LB_test', 'AUC_test', 'AUC_UB_test', 'Accuracy_test',
            'AUC_UB_validation', 'Accuracy_validation', 'F1_validation',
            'MCC_validation']
 
+#  A list of columns for tables with run statistics
 col_statis = ['Iteration', 'AUC_LB_test', 'AUC_test',
               'AUC_UB_test', 'Accuracy_test', 'F1_test', 'MCC_test',
               'AUC_LB_validation', 'AUC_validation',
@@ -495,7 +512,7 @@ def f_one_mcc_score(model, X_test, Y_test):
 
 class SCAMsPipeline:
     def __init__(self, study_name, datasets_path,
-                 ID_name='ID', iterations=1,
+                 ID_name='ID', iterations=10,
                  validation_name='test_DLS.csv',
                  X_column_name='Smiles String',
                  Y_column_name='agg?'):
@@ -511,7 +528,8 @@ class SCAMsPipeline:
         train_test_dataset = pd.read_csv(file_doesnot_exist(datasets_path, dataset_name))
         train_validation_dataset = pd.read_csv(file_doesnot_exist(datasets_path, validation_name))
         if Path.is_dir(self.results_dir):
-            delete_existing_path = str2bool(input('The path exists. Do you want to delete the existing path and create the new? Please, enter yes or no: '))
+            out_srt = input('The path exists. Do you want to delete the existing path and create the new? Please, enter yes or no: ')
+            delete_existing_path = str2bool(out_srt)
             if delete_existing_path:
                 rm_tree(self.results_dir)
             else:
@@ -529,6 +547,9 @@ class SCAMsPipeline:
         self.run_pipeline()
 
     def run_pipeline(self):
+        """
+        Run the pipeline
+        """
         for i in range(self.iterations):
             fold = Run(i, self.validation_dataset.X, self.validation_dataset.Y,
                        self.train_test_dataset, self.splitter,
@@ -566,6 +587,9 @@ class SCAMsPipeline:
 
 
 def dataset_to_splitter(splitter, dataset, type):
+    """
+    Feed the dataset to a chosen splitter
+    """
 
     splitted = splitter(dataset.X, dataset.Y,
                         dataset.SMILES,
@@ -870,10 +894,10 @@ class DeepSCAMsModel(Model):
 def create_keras_model(shape=2256,
                        dropout=0.2):
     model = Sequential()
-    model.add(Dense(500, input_dim=shape,
+    model.add(Dense(800, input_dim=shape,
                     kernel_initializer='normal', activation='relu'))
     model.add(Dropout(dropout))
-    model.add(Dense(100, activation='relu'))
+    model.add(Dense(500, activation='relu'))
     model.add(Dropout(dropout))
     model.add(Dense(50, activation='relu'))
     model.add(Dropout(dropout))
@@ -1024,11 +1048,13 @@ class ALModel(Model):
             performance_t_iter_l = performance_t_iter.iloc[0].tolist()
             gmean_test.append(self.gmen_no_nan(performance_t_iter_l))
             performance_test_l.append(performance_t_iter_l)
+            ### Edit ###
+            print(performance_test_l)
 
             performance_v_iter = Validation(learner, self.X_validation,
                                             self.Y_validation, 'Validation').results
             performance_v_iter_l = performance_v_iter.iloc[0].tolist()
-            ### Edit ##
+            ### Edit ###
             #learner.estimator[1].model.save(Path('/home/khali/scams/Results/N_SP1_TTS') / 'TF_MLP_AL_{}.h5'.format(i+1))
             gmean_validation.append(self.gmen_no_nan(performance_v_iter_l))
             performance_validation_l.append(performance_v_iter_l)

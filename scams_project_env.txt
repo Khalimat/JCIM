@@ -1,4 +1,4 @@
-# This file may be used to create an environment using:
+﻿# This file may be used to create an environment using:
 # $ conda create --name <env> --file <this file>
 # platform: linux-64
 @EXPLICIT
@@ -48,10 +48,8 @@ https://repo.anaconda.com/pkgs/main/noarch/pytz-2021.1-pyhd3eb1b0_0.conda
 https://repo.anaconda.com/pkgs/main/linux-64/six-1.15.0-py37h06a4308_0.conda
 https://repo.anaconda.com/pkgs/main/noarch/wheel-0.36.2-pyhd3eb1b0_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/certifi-2020.12.5-py37h89c1867_1.tar.bz2
-https://repo.anaconda.com/pkgs/main/linux-64/mkl-service-2.3.0-py37he8ac12f_0.conda
 https://repo.anaconda.com/pkgs/main/linux-64/pillow-8.1.0-py37he98fc37_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/pycairo-1.18.0-py37h1b9232e_1000.tar.bz2
-https://repo.anaconda.com/pkgs/main/noarch/python-dateutil-2.8.1-pyhd3eb1b0_0.tar.bz2
 https://repo.anaconda.com/pkgs/main/linux-64/numpy-base-1.19.2-py37hfa32c7d_0.conda
 https://repo.anaconda.com/pkgs/main/linux-64/setuptools-52.0.0-py37h06a4308_0.conda
 https://conda.anaconda.org/conda-forge/noarch/joblib-1.0.0-pyhd8ed1ab_0.tar.bz2
