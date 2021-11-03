@@ -1,6 +1,16 @@
 from abc import ABC
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+
+import pandas as pd
+import numpy as np
+from scipy.stats import gmean
+
+from modAL.models import ActiveLearner
+
+
+
 from validation import Validation
 
 #  Importing modules from TensorFlow and Keras
@@ -12,6 +22,7 @@ from tensorflow.python.keras.layers import Dense, Dropout
 import h5py
 import io
 import copy
+
 
 
 class Model(ABC):
@@ -162,3 +173,142 @@ class TensorFlowModel(Model):
         validation_performance = Validation(self.TFModel,
                                             X_validation, self.Y_validation, 'Validation').results
         self.validation_performance = validation_performance
+
+class ALModel(Model):
+    def __init__(self, X_train, Y_train,
+                 X_test, Y_test, X_validation,
+                 Y_validation, n_queries,
+                 q_strategy,
+                 iteration, n_initial=10):
+        super().__init__(X_train, Y_train,
+                 X_test, Y_test, X_validation,
+                 Y_validation)
+        self.n_initial = n_initial
+        self.n_queries = n_queries
+        self.model = KerasClassifier(create_keras_model)
+        self.scaler = RobustScaler(quantile_range=(25, 75))
+        self.q_strategy = q_strategy
+        self.iteration = iteration
+        self.pipe = PipelineSW([('scaler', self.scaler),
+                                ('tf_mlp', self.model)])
+        self.initialize_al()
+        self.final_model = None
+        self.run()
+
+    @staticmethod
+    def random_choise(X_train, n_initial):
+        initial_idx = np.random.choice(range(len(X_train)),
+                                       size=n_initial, replace=False)
+        return initial_idx
+
+    @staticmethod
+    def gmen_no_nan(list_with_stats):
+        g_v = gmean(list_with_stats)
+        if not np.isnan(g_v):
+            return g_v
+        else:
+            return 0
+
+    def initialize_al(self):
+
+        initial_idx = self.random_choise(self.X_train, self.n_initial)
+
+        while len(set(self.Y_train[initial_idx])) != 2:  # Check if both classes are presented
+            initial_idx = self.random_choise(self.X_train, self.n_initial)
+
+        X, Y = self.X_train[initial_idx], self.Y_train[initial_idx]
+        X_initial, y_initial = self.X_train[initial_idx], self.Y_train[initial_idx]
+        X_pool, y_pool = np.delete(self.X_train, initial_idx, axis=0), \
+                         np.delete(self.Y_train, initial_idx, axis=0)
+
+        learner = ActiveLearner(
+            estimator=self.pipe,
+            query_strategy=self.q_strategy,
+            X_training=X_initial, y_training=y_initial
+        )
+
+
+        # Calculate initial performance metrics on the test set
+        performance_test = Validation(learner, self.X_test,
+                                      self.Y_test, 'Test').results
+        performance_test_l = [performance_test.iloc[0].tolist()]
+        gmean_test = [self.gmen_no_nan(performance_test_l[0])]
+
+        # Calculate initial performance metrics on the validation set
+        performance_validation = Validation(learner, self.X_validation,
+                                            self.Y_validation, 'Validation').results
+        performance_validation_l = [performance_validation.iloc[0].tolist()]
+        gmean_validation = [self.gmen_no_nan(performance_validation_l[0])]
+
+        initial_data = [X, Y]
+        pool = [X_pool, y_pool]
+
+        return initial_data, pool, performance_test_l, performance_validation_l, \
+               learner, [gmean_test, gmean_validation]
+
+    def run(self):
+
+        initial_data, pool, performance_test_l,\
+        performance_validation_l, learner, gmeans = self.initialize_al()
+
+        X, Y = initial_data
+        X_pool, y_pool = pool
+        gmean_test, gmean_validation = gmeans
+
+        for i in range(self.n_queries - 1):
+            query_idx, query_inst = learner.query(X_pool)
+            ### Edit ###
+            learner.teach(X_pool[query_idx], y_pool[query_idx])
+            #learner.teach(X_pool[query_idx], y_pool[query_idx],
+            #              epochs=50, batch_size=128, verbose=0)
+            X = np.append(X, X_pool[query_idx], axis=0)
+            Y = np.append(Y, y_pool[query_idx])
+            X_pool, y_pool = np.delete(X_pool, query_idx, axis=0), \
+                             np.delete(y_pool, query_idx, axis=0)
+
+            performance_t_iter = Validation(learner, self.X_test,
+                                            self.Y_test, 'Test').results
+            performance_t_iter_l = performance_t_iter.iloc[0].tolist()
+            gmean_test.append(self.gmen_no_nan(performance_t_iter_l))
+            performance_test_l.append(performance_t_iter_l)
+            ### Edit ###
+            print(performance_test_l)
+
+            performance_v_iter = Validation(learner, self.X_validation,
+                                            self.Y_validation, 'Validation').results
+            performance_v_iter_l = performance_v_iter.iloc[0].tolist()
+            ### Edit ###
+            #learner.estimator[1].model.save(Path('/home/khali/scams/Results/N_SP1_TTS') / 'TF_MLP_AL_{}.h5'.format(i+1))
+            gmean_validation.append(self.gmen_no_nan(performance_v_iter_l))
+            performance_validation_l.append(performance_v_iter_l)
+        performance_test_l = np.array(performance_test_l)
+        performance_test_l[np.isnan(performance_test_l)] = 0
+        self.test_performance = list(np.max(np.array(performance_test_l), axis=0))
+
+        self.test_performance = pd.DataFrame([self.test_performance], index=["test performance"],
+                                              columns=['AUC lower estimate', 'AUC',
+                                                       'AUC upper estimate', 'accuracy',
+                                                       'F1', 'MCC'])
+        performance_validation_l = np.array(performance_validation_l)
+        performance_validation_l[np.isnan(performance_validation_l)] = 0
+        self.validation_performance = list(np.max(np.array(performance_validation_l), axis=0))
+        self.validation_performance = pd.DataFrame([self.validation_performance], index=["validation performance"],
+                                              columns=['AUC lower estimate', 'AUC',
+                                                       'AUC upper estimate', 'accuracy',
+                                                       'F1', 'MCC'])
+        integral_performace = np.concatenate((performance_test_l, performance_validation_l), axis=1)
+        index_max_pef = np.argmax(gmean(integral_performace, axis=1))
+        final_X, final_Y = X[0: index_max_pef + self.n_initial, ], Y[0: index_max_pef + self.n_initial, ]
+        self.final_model = TensorFlowModel(final_X, final_Y, self.X_test,
+                                           self.Y_test, self.X_validation, self.Y_validation).TFModel
+        print('Argmax validation', np.argmax(np.array(gmean_validation)))
+        print('Argmax test', np.argmax(np.array(gmean_test)))
+
+class PipelineSW(Pipeline):
+    def fit(self, X, y, sample_weight=None):
+        """Fit and pass sample weights only to the last step"""
+        if sample_weight is not None:
+            kwargs = {self.steps[-1][0] + '__sample_weight': sample_weight}
+        else:
+            kwargs = {}
+        return super().fit(X, y, **kwargs)
