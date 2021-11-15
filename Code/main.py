@@ -4,22 +4,16 @@ from __future__ import print_function
 #  Importing general-purpose modules
 from pathlib import Path
 import pandas as pd
-import numpy as np
 
 import argparse
 import time
 
 
 #  Importing modules from sklearn
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score
-from sklearn.neural_network import MLPClassifier
 
 #  Importing modules from scipy
-from scipy import stats
-from scipy.signal import savgol_filter
-from scipy.stats import gmean
+# from scipy.signal import savgol_filter
 
 #  Importing the modules from imbalanced learning
 from imblearn.over_sampling import ADASYN, SMOTE  # up-sampling
@@ -70,20 +64,9 @@ col_statis = ['Iteration', 'AUC_LB_test', 'AUC_test',
               'AUC_UB_validation', 'Accuracy_validation',
               'F1_validation', 'MCC_validation']
 
-def f_one_mcc_score(model, X_test, Y_test):
-    """
-    Calculate F1-score and Matthews correlation coefficient (MCC)
-
-    :param model:trained model
-    :param X_test: test samples to predict labels
-    :param Y_test: true labels
-    :return: F1-score, MCC
-    """
-    y_pred = model.predict(X_test)
-    f_one = f1_score(Y_test, y_pred)
-    tn, fp, fn, tp = confusion_matrix(Y_test, y_pred).ravel()
-    return f_one, (tp * tn - fp * fn) / ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
-
+SPLIT = {'TTS': TTSSplitter,
+         'SS': SSplitter,
+         'B': BSplitter}
 
 class SCAMsPipeline:
     def __init__(self, study_name, datasets_path,
@@ -103,7 +86,7 @@ class SCAMsPipeline:
         train_test_dataset = pd.read_csv(file_doesnot_exist(datasets_path, dataset_name))
         train_validation_dataset = pd.read_csv(file_doesnot_exist(datasets_path, validation_name))
         if Path.is_dir(self.results_dir):
-            out_srt = input('The path exists. Do you want to delete the existing path and create the new? Please, enter yes or no: ')
+            out_srt = input('The path exists. Do you want to delete the existing path and create a new? Please, enter yes or no: ')
             delete_existing_path = str2bool(out_srt)
             if delete_existing_path:
                 rm_tree(self.results_dir)
@@ -161,7 +144,6 @@ class SCAMsPipeline:
 
 
 
-
 class Run:
     def __init__(self, iteration, X_validation,
                  Y_validation, test_train_to_split,
@@ -213,8 +195,10 @@ class Run:
         TensorFlow = TensorFlowModel(X_train, Y_train, self.X_test,
                                      self.Y_test, self.X_validation, self.Y_validation)
 
-        DeepSCAMs_MLP_non_AL = [self.iteration] + DeepSCAMs.validation_performance.iloc[0].tolist() + DeepSCAMs.test_performance.iloc[0].tolist()
-        TF_MLP_non_AL = [self.iteration] + TensorFlow.validation_performance.iloc[0].tolist() + TensorFlow.test_performance.iloc[0].tolist()
+        DeepSCAMs_MLP_non_AL = [self.iteration] + DeepSCAMs.validation_performance.iloc[0].tolist() +\
+                               DeepSCAMs.test_performance.iloc[0].tolist()
+        TF_MLP_non_AL = [self.iteration] + TensorFlow.validation_performance.iloc[0].tolist() + \
+                        TensorFlow.test_performance.iloc[0].tolist()
         self.perf_stats_deepscams_non_AL = pd.DataFrame([DeepSCAMs_MLP_non_AL], columns=col_statis)
 
         self.perf_stats_tensorflow_non_AL = pd.DataFrame([TF_MLP_non_AL],
@@ -222,30 +206,22 @@ class Run:
 
 
     def run_al(self):
-        n_queries = int(0.88 * self.X_train.shape[0]) - 11
+        # Edited
+        n_queries = int(self.X_train.shape[0]) - 60
         TensorFlowAL = ALModel(self.X_train, self.Y_train,
-                          self.X_test, self.Y_test,
-                          self.X_validation, self.Y_validation,
-                          n_queries, q_strategy=entropy_sampling,
-                          iteration=self.iteration)
+                               self.X_test, self.Y_test,
+                               self.X_validation, self.Y_validation,
+                               n_queries=n_queries,
+                               results_dir=self.results_dir,
+                               q_strategy=entropy_sampling,
+                               iteration=self.iteration)
+
         TensorFlowAL.final_model.model.save(self.results_dir / 'TF_MLP_AL_{}.h5'.format(self.iteration))
         self.perf_stats_tensorflow_AL = pd.DataFrame([[self.iteration] + TensorFlowAL.validation_performance.iloc[0].tolist() +
                                                      TensorFlowAL.test_performance.iloc[0].tolist()],
                                                      columns=col_statis)
 
 
-SPLIT = {'TTS': TTSSplitter,
-         'SS': SSplitter,
-         'B': BSplitter}
-
-# class PipelineSW(Pipeline):
-#     def fit(self, X, y, sample_weight=None):
-#         """Fit and pass sample weights only to the last step"""
-#         if sample_weight is not None:
-#             kwargs = {self.steps[-1][0] + '__sample_weight': sample_weight}
-#         else:
-#             kwargs = {}
-#         return super().fit(X, y, **kwargs)
 
 if __name__ == "__main__":
     currnt_path = Path.cwd().parents[0] / 'Datasets'

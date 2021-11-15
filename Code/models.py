@@ -1,28 +1,33 @@
 from abc import ABC
+
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
+from scipy.signal import savgol_filter
 
 import pandas as pd
 import numpy as np
 from scipy.stats import gmean
-
 from modAL.models import ActiveLearner
-
-
-
-from validation import Validation
 
 #  Importing modules from TensorFlow and Keras
 import tensorflow as tf
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.layers import Dense, Dropout
 
+from matplotlib.pyplot import plot
+
 #  Save model
 import h5py
 import io
 import copy
 
+from validation import Validation
+from pathlib import Path
+
+
+from utilities import str2bool, rm_tree
 
 
 class Model(ABC):
@@ -47,8 +52,6 @@ class Model(ABC):
 
     def validation(self):
         pass
-
-
 
 class DeepSCAMsModel(Model):
 
@@ -93,12 +96,12 @@ class DeepSCAMsModel(Model):
 
 
 def create_keras_model(shape=2256,
-                       dropout=0.2):
+                       dropout=0.4):
     model = Sequential()
-    model.add(Dense(800, input_dim=shape,
+    model.add(Dense(500, input_dim=shape,
                     kernel_initializer='normal', activation='relu'))
     model.add(Dropout(dropout))
-    model.add(Dense(500, activation='relu'))
+    model.add(Dense(100, activation='relu'))
     model.add(Dropout(dropout))
     model.add(Dense(50, activation='relu'))
     model.add(Dropout(dropout))
@@ -106,7 +109,7 @@ def create_keras_model(shape=2256,
     model.add(Dropout(dropout))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam',
-                  metrics=["accuracy"])
+                  metrics=["AUC"])
     return model
 
 
@@ -174,12 +177,14 @@ class TensorFlowModel(Model):
                                             X_validation, self.Y_validation, 'Validation').results
         self.validation_performance = validation_performance
 
+
 class ALModel(Model):
     def __init__(self, X_train, Y_train,
                  X_test, Y_test, X_validation,
                  Y_validation, n_queries,
-                 q_strategy,
-                 iteration, n_initial=10):
+                 results_dir,
+                 q_strategy, iteration,
+                 n_initial=50):
         super().__init__(X_train, Y_train,
                  X_test, Y_test, X_validation,
                  Y_validation)
@@ -193,13 +198,24 @@ class ALModel(Model):
                                 ('tf_mlp', self.model)])
         self.initialize_al()
         self.final_model = None
+        self.results_dir = results_dir / str(self.iteration)
+        self.make_run_directory()
         self.run()
 
     @staticmethod
-    def random_choise(X_train, n_initial):
+    def random_choice(X_train, n_initial):
         initial_idx = np.random.choice(range(len(X_train)),
                                        size=n_initial, replace=False)
         return initial_idx
+    def make_run_directory(self):
+        if Path.is_dir(self.results_dir):
+            out_srt = input('The path exists. Do you want to delete the existing path and create a new? Please, enter yes or no: ')
+            delete_existing_path = str2bool(out_srt)
+            if delete_existing_path:
+                rm_tree(self.results_dir)
+                Path.mkdir(self.results_dir)
+        else:
+            Path.mkdir(self.results_dir)
 
     @staticmethod
     def gmen_no_nan(list_with_stats):
@@ -211,10 +227,10 @@ class ALModel(Model):
 
     def initialize_al(self):
 
-        initial_idx = self.random_choise(self.X_train, self.n_initial)
+        initial_idx = self.random_choice(self.X_train, self.n_initial)
 
         while len(set(self.Y_train[initial_idx])) != 2:  # Check if both classes are presented
-            initial_idx = self.random_choise(self.X_train, self.n_initial)
+            initial_idx = self.random_choice(self.X_train, self.n_initial)
 
         X, Y = self.X_train[initial_idx], self.Y_train[initial_idx]
         X_initial, y_initial = self.X_train[initial_idx], self.Y_train[initial_idx]
@@ -258,9 +274,7 @@ class ALModel(Model):
         for i in range(self.n_queries - 1):
             query_idx, query_inst = learner.query(X_pool)
             ### Edit ###
-            learner.teach(X_pool[query_idx], y_pool[query_idx])
-            #learner.teach(X_pool[query_idx], y_pool[query_idx],
-            #              epochs=50, batch_size=128, verbose=0)
+            learner.teach(X_pool[query_idx], y_pool[query_idx], epochs=50)
             X = np.append(X, X_pool[query_idx], axis=0)
             Y = np.append(Y, y_pool[query_idx])
             X_pool, y_pool = np.delete(X_pool, query_idx, axis=0), \
@@ -272,7 +286,6 @@ class ALModel(Model):
             gmean_test.append(self.gmen_no_nan(performance_t_iter_l))
             performance_test_l.append(performance_t_iter_l)
             ### Edit ###
-            print(performance_test_l)
 
             performance_v_iter = Validation(learner, self.X_validation,
                                             self.Y_validation, 'Validation').results
@@ -283,14 +296,35 @@ class ALModel(Model):
             performance_validation_l.append(performance_v_iter_l)
         performance_test_l = np.array(performance_test_l)
         performance_test_l[np.isnan(performance_test_l)] = 0
+        np_test_per_init = pd.DataFrame(performance_test_l)
+        np_test_per_init.to_csv(self.results_dir / 'test_initial_stats.csv')
+        plt.plot(performance_test_l.T[0], label='Test, initial')
+
+        performance_test_l_m = savgol_filter(performance_test_l.T, 7, 3)
+        performance_test_l_m = performance_test_l_m.T
+        np_test_per_smoothed = pd.DataFrame(performance_test_l_m)
+        np_test_per_smoothed.to_csv(self.results_dir / 'test_smoothed_stats.csv')
+        plt.plot(performance_test_l_m.T[0], label='Test, smoothed')
+        plt.savefig('stats_{}.png'.format(self.iteration))
         self.test_performance = list(np.max(np.array(performance_test_l), axis=0))
 
         self.test_performance = pd.DataFrame([self.test_performance], index=["test performance"],
                                               columns=['AUC lower estimate', 'AUC',
                                                        'AUC upper estimate', 'accuracy',
                                                        'F1', 'MCC'])
+
         performance_validation_l = np.array(performance_validation_l)
         performance_validation_l[np.isnan(performance_validation_l)] = 0
+        np_val_per_init = pd.DataFrame(performance_validation_l)
+        np_val_per_init.to_csv(self.results_dir / 'validation_initial_stats.csv')
+        plt.plot(performance_validation_l.T[0], label='Validation, initial')
+        performance_validation_l = savgol_filter(performance_validation_l.T, 7, 2)
+        performance_validation_l = performance_validation_l.T
+
+        np_val_per_smoothed = pd.DataFrame(performance_validation_l)
+        np_val_per_smoothed.to_csv(self.results_dir / 'validation_smoothed_stats.csv')
+        plt.plot(performance_validation_l.T[0], label='Validation, smoothed')
+        plt.savefig(self.results_dir / 'results.png')
         self.validation_performance = list(np.max(np.array(performance_validation_l), axis=0))
         self.validation_performance = pd.DataFrame([self.validation_performance], index=["validation performance"],
                                               columns=['AUC lower estimate', 'AUC',
@@ -301,6 +335,7 @@ class ALModel(Model):
         final_X, final_Y = X[0: index_max_pef + self.n_initial, ], Y[0: index_max_pef + self.n_initial, ]
         self.final_model = TensorFlowModel(final_X, final_Y, self.X_test,
                                            self.Y_test, self.X_validation, self.Y_validation).TFModel
+
         print('Argmax validation', np.argmax(np.array(gmean_validation)))
         print('Argmax test', np.argmax(np.array(gmean_test)))
 

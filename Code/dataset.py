@@ -1,6 +1,6 @@
 import numpy as np
-from rdkit import Chem
 import pandas as pd
+from rdkit import Chem
 from utilities import describe
 
 
